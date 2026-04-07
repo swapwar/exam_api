@@ -1,8 +1,6 @@
 fastapi
 uvicorn
+jinja2==3.1.4
 pandas
 pdfplumber
-jinja2
-python-multipart
 openpyxl
-sqlalchemy
