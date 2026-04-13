@@ -11,8 +11,9 @@ import os
 
 app = FastAPI()
 
-# ✅ CORRECT TEMPLATE SETUP (NO CUSTOM ENV)
+# ✅ FIXED TEMPLATE SETUP (FINAL SOLUTION)
 templates = Jinja2Templates(directory="templates")
+templates.env.cache = None   # 🔥 IMPORTANT FIX
 
 # Ensure static folder exists
 os.makedirs("static", exist_ok=True)
@@ -63,15 +64,18 @@ async def evaluate(request: Request,
                    mobile: str = Form(...),
                    file: UploadFile = File(...)):
 
+    # Validate file
     if file.content_type != "application/pdf":
         return {"error": "Please upload a PDF file"}
 
+    # Save uploaded file
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(await file.read())
         pdf_path = tmp.name
 
     text = ""
 
+    # Read PDF safely
     try:
         with pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
@@ -81,8 +85,11 @@ async def evaluate(request: Request,
     except Exception as e:
         return {"error": f"PDF read error: {str(e)}"}
 
+    # Extract responses
     pattern = r"Question ID\s*:\s*(\d+).*?Chosen Option\s*:\s*(\d+|--)"
     matches = re.findall(pattern, text, re.S)
+
+    print("Matches:", matches)
 
     responses = {qid: opt for qid, opt in matches}
 
@@ -91,6 +98,7 @@ async def evaluate(request: Request,
     unattempted = 0
     score = 0
 
+    # Evaluate answers
     for qid, correct_ans in answer_key.items():
         response = responses.get(qid, "--")
 
@@ -106,12 +114,14 @@ async def evaluate(request: Request,
     attempted = correct + wrong
     accuracy = (correct / attempted * 100) if attempted > 0 else 0
 
+    # Save result to DB
     cursor.execute(
         "INSERT INTO results(name,mobile,score,accuracy) VALUES (?,?,?,?)",
         (name, mobile, score, round(accuracy, 2))
     )
     conn.commit()
 
+    # Save Excel result
     df = pd.DataFrame([{
         "Name": name,
         "Mobile": mobile,
@@ -124,6 +134,7 @@ async def evaluate(request: Request,
 
     df.to_excel("static/result.xlsx", index=False)
 
+    # Send result to template
     return templates.TemplateResponse("result.html",
                                       {"request": request,
                                        "result": {
