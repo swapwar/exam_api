@@ -16,10 +16,21 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 CORRECT_MARK = 2
 WRONG_MARK = -0.5
 
-# Load answer key
+# ✅ Load answer key safely
 answer_df = pd.read_csv("answer_key.csv")
-answer_key = dict(zip(answer_df["QuestionID"].astype(str),
-                      answer_df["Answer"].astype(str)))
+
+# 🔥 Clean column names (VERY IMPORTANT FIX)
+answer_df.columns = answer_df.columns.str.strip().str.lower()
+
+# Debug (optional – can remove later)
+print("Columns in answer file:", answer_df.columns)
+
+# ✅ Safe column access
+if "questionid" not in answer_df.columns or "answer" not in answer_df.columns:
+    raise Exception("❌ Column names must include 'QuestionID' and 'Answer'")
+
+answer_key = dict(zip(answer_df["questionid"].astype(str),
+                      answer_df["answer"].astype(str)))
 
 # Database
 conn = sqlite3.connect("database.db", check_same_thread=False)
@@ -57,7 +68,9 @@ async def evaluate(request: Request,
 
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            text += page.extract_text()
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted
 
     pattern = r"Question ID\s*:\s*(\d+).*?Chosen Option\s*:\s*(\d+|--)"
     matches = re.findall(pattern, text, re.S)
@@ -104,7 +117,7 @@ async def evaluate(request: Request,
         "Wrong": wrong,
         "Unattempted": unattempted,
         "Score": score,
-        "Accuracy": round(accuracy,2)
+        "Accuracy": round(accuracy, 2)
     }])
 
     df.to_excel("static/result.xlsx", index=False)
@@ -116,7 +129,7 @@ async def evaluate(request: Request,
         "wrong": wrong,
         "unattempted": unattempted,
         "score": score,
-        "accuracy": round(accuracy,2)
+        "accuracy": round(accuracy, 2)
     }
 
     return templates.TemplateResponse("result.html",
