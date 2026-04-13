@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.staticfiles import StaticFiles
-from starlette.templating import Jinja2Templates
+from fastapi.templating import Jinja2Templates
 
 import pandas as pd
 import pdfplumber
@@ -11,9 +11,8 @@ import os
 
 app = FastAPI()
 
-# ✅ FIXED TEMPLATE SETUP (FINAL SOLUTION)
+# ✅ SIMPLE & CORRECT TEMPLATE SETUP
 templates = Jinja2Templates(directory="templates")
-templates.env.cache = None   # 🔥 IMPORTANT FIX
 
 # Ensure static folder exists
 os.makedirs("static", exist_ok=True)
@@ -51,13 +50,13 @@ accuracy REAL
 conn.commit()
 
 
-# Home page
+# ✅ HOME ROUTE
 @app.get("/")
 def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-# Evaluate PDF
+# ✅ EVALUATE PDF
 @app.post("/evaluate")
 async def evaluate(request: Request,
                    name: str = Form(...),
@@ -88,8 +87,6 @@ async def evaluate(request: Request,
     # Extract responses
     pattern = r"Question ID\s*:\s*(\d+).*?Chosen Option\s*:\s*(\d+|--)"
     matches = re.findall(pattern, text, re.S)
-
-    print("Matches:", matches)
 
     responses = {qid: opt for qid, opt in matches}
 
@@ -148,7 +145,7 @@ async def evaluate(request: Request,
                                        }})
 
 
-# Leaderboard
+# ✅ LEADERBOARD
 @app.get("/leaderboard")
 def leaderboard(request: Request):
     cursor.execute("SELECT name,score,accuracy FROM results ORDER BY score DESC LIMIT 20")
