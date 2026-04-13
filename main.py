@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.templating import Jinja2Templates
+from starlette.templating import Jinja2Templates   # ✅ FIXED IMPORT
 from fastapi.staticfiles import StaticFiles
 import pandas as pd
 import pdfplumber
@@ -10,9 +10,11 @@ import os
 
 app = FastAPI()
 
+# ✅ FIXED template initialization
 templates = Jinja2Templates(directory="templates")
+templates.env.cache = {}   # 🔥 VERY IMPORTANT (fixes your error)
 
-# ✅ Ensure static folder exists (IMPORTANT for Render)
+# Ensure static folder exists
 os.makedirs("static", exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -20,14 +22,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 CORRECT_MARK = 2
 WRONG_MARK = -0.5
 
-# ✅ Load answer key safely
+# Load answer key
 answer_df = pd.read_csv("answer_key.csv")
-
-# Clean column names
 answer_df.columns = answer_df.columns.str.strip().str.lower()
+
 print("Columns in answer file:", answer_df.columns)
 
-# Validate columns
 if "questionid" not in answer_df.columns or "answer" not in answer_df.columns:
     raise Exception("❌ Column names must include 'QuestionID' and 'Answer'")
 
@@ -50,13 +50,9 @@ accuracy REAL
 conn.commit()
 
 
-# ✅ HOME ROUTE (safe)
 @app.get("/")
 def home(request: Request):
-    try:
-        return templates.TemplateResponse("index.html", {"request": request})
-    except Exception as e:
-        return {"error": f"Template error: {str(e)}"}
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.post("/evaluate")
@@ -65,18 +61,15 @@ async def evaluate(request: Request,
                    mobile: str = Form(...),
                    file: UploadFile = File(...)):
 
-    # ✅ Validate file
     if file.content_type != "application/pdf":
         return {"error": "Please upload a PDF file"}
 
-    # Save temp file
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(await file.read())
         pdf_path = tmp.name
 
     text = ""
 
-    # ✅ Safe PDF reading
     try:
         with pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
@@ -86,18 +79,12 @@ async def evaluate(request: Request,
     except Exception as e:
         return {"error": f"PDF read error: {str(e)}"}
 
-    # Extract answers
     pattern = r"Question ID\s*:\s*(\d+).*?Chosen Option\s*:\s*(\d+|--)"
     matches = re.findall(pattern, text, re.S)
 
-    print("Matches:", matches)
-
     responses = {qid: opt for qid, opt in matches}
 
-    correct = 0
-    wrong = 0
-    unattempted = 0
-    score = 0
+    correct = wrong = unattempted = score = 0
 
     for qid, correct_ans in answer_key.items():
         response = responses.get(qid, "--")
@@ -114,14 +101,12 @@ async def evaluate(request: Request,
     attempted = correct + wrong
     accuracy = (correct / attempted * 100) if attempted > 0 else 0
 
-    # Save to DB
     cursor.execute(
         "INSERT INTO results(name,mobile,score,accuracy) VALUES (?,?,?,?)",
         (name, mobile, score, round(accuracy, 2))
     )
     conn.commit()
 
-    # Save Excel
     df = pd.DataFrame([{
         "Name": name,
         "Mobile": mobile,
@@ -134,19 +119,17 @@ async def evaluate(request: Request,
 
     df.to_excel("static/result.xlsx", index=False)
 
-    result = {
-        "name": name,
-        "mobile": mobile,
-        "correct": correct,
-        "wrong": wrong,
-        "unattempted": unattempted,
-        "score": score,
-        "accuracy": round(accuracy, 2)
-    }
-
     return templates.TemplateResponse("result.html",
                                       {"request": request,
-                                       "result": result})
+                                       "result": {
+                                           "name": name,
+                                           "mobile": mobile,
+                                           "correct": correct,
+                                           "wrong": wrong,
+                                           "unattempted": unattempted,
+                                           "score": score,
+                                           "accuracy": round(accuracy, 2)
+                                       }})
 
 
 @app.get("/leaderboard")
